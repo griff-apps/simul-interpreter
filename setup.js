@@ -103,6 +103,15 @@ async function enable(token, project, service, label, step) {
   await waitOp(token, "https://serviceusage.googleapis.com/v1", op, L(label + "の有効化", "Enabling " + label));
 }
 
+// 前にこのアプリで作ったキーがあればそれを返す（機種変更・別の端末でも、Googleでログインするだけで同じキーに戻る）
+async function findKey(token, project, step) {
+  const list = await api(token, "GET", `https://apikeys.googleapis.com/v2/projects/${project}/locations/global/keys`).catch(() => ({}));
+  const k = (list.keys || []).find(k => k.displayName === "同時通訳アプリ" && !k.deleteTime);
+  if (!k) return "";
+  step(L("前に作ったキーを使います", "Using the key you created before"));
+  return (await api(token, "GET", `https://apikeys.googleapis.com/v2/${k.name}/keyString`)).keyString || "";
+}
+
 async function createKey(token, project, step) {
   step(L("APIキーを作成しています…", "Creating the API key…"));
   const op = await api(token, "POST", `https://apikeys.googleapis.com/v2/projects/${project}/locations/global/keys`, {
@@ -143,7 +152,7 @@ export async function autoSetup({ model, onStep }) {
     const project = await findOrCreateProject(token, step);
     await enable(token, project, "apikeys.googleapis.com", L("キー管理の機能", "the API Keys service"), step);
     await enable(token, project, GEMINI_API, "Gemini API", step);
-    const key = await createKey(token, project, step);
+    const key = await findKey(token, project, step) || await createKey(token, project, step);
     await testKey(key, model, step);
     return key;
   } finally {
