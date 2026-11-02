@@ -68,6 +68,11 @@ body.nosrc .para .src{display:none}
 .sheet-head button{background:var(--accent);color:#fff;border-color:var(--accent)}
 #settings{display:grid;gap:14px;max-width:640px;margin:0 auto}
 #settings [hidden]{display:none}
+#settings.first>:not(#movedNote):not(#moreBtn){display:none!important}
+#moreBtn{display:none}
+#settings.first>#moreBtn{display:block;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:8px;padding:10px;font-size:14px}
+#movedStatus{font-size:14px;line-height:1.6;white-space:pre-wrap}
+#movedStatus:empty{display:none}
 .moved{border:2px solid var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel));border-radius:12px;padding:16px;display:grid;gap:10px}
 .moved b{font-size:19px}
 .moved p{margin:0;font-size:15px;line-height:1.7}
@@ -148,11 +153,13 @@ kbd{border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:.9em}
   <div class="sheet-head"><h2 data-en="Settings">設定</h2><button id="closeSettings" data-en="Done">完了</button></div>
   <section id="settings">
     <div id="movedNote" class="moved" hidden>
-      <b data-en="This app has a new address.">アプリの住所が新しくなりました。</b>
-      <p data-en="Your old settings are still safe, but at the new address you need to set it up once more. Just tap the button below and sign in with Google — your old settings come back.">前の設定はそのまま残っていますが、新しい住所では1回だけ入れ直しが必要です。下のボタンを押して、いつものGoogleでログインするだけで、前の設定に戻ります。</p>
-      <button id="movedBtn" class="big" data-en="Restore my settings with Google">Googleで前の設定に戻す</button>
+      <b data-en="We updated the app">アプリを新しくしました</b>
+      <p data-en="Because of the update, you need to set it up once at the start. Tap the button below and sign in with Google — your previous settings come back as they were (about 1 minute).">新しくしたので、はじめに1回だけ設定が必要です。下のボタンを押してGoogleでログインすると、前の設定がそのまま戻ります（1分ほど）。</p>
+      <button id="movedBtn" class="big" data-en="Set up with Google">Googleで設定する</button>
+      <div id="movedStatus"></div>
       <p class="small" data-en="By tapping, you promise not to use this for meetings, talks with parents, or students' personal information.">押すと「面談・保護者との話・生徒の個人のことには使わない」と約束したことになります。</p>
     </div>
+    <button id="moreBtn" class="sub more" data-en="Enter it yourself? Tap here">自分で入力する人はこちら</button>
     <label><span data-en="Display language">表示言語</span>
       <select id="uiLang">
         <option value="ja">日本語</option>
@@ -249,6 +256,8 @@ if (location.hash === "#hikitsugi") {
   }
 }
 document.getElementById("movedNote").hidden = !!(S.geminiKey || S.apiKey);
+// まだ設定がない人：最初の画面は帯とボタンだけ（ほかは「自分で入力する人はこちら」で開く）
+document.getElementById("settings").classList.toggle("first", !(S.geminiKey || S.apiKey));
 if (!S.uiLang) S.uiLang = detectLang();   // 最初は端末の言語に合わせる
 setLang(S.uiLang);
 // 全画面レイアウトに合わせ、以前の小さい文字サイズ設定は一度だけ新しい既定値に上げる
@@ -668,7 +677,7 @@ import("./setup.js").then(m => {
   if (!m.CLIENT_ID) { $("easyBtn").textContent = L("かんたん設定（準備中）", "Easy setup (not ready yet)"); $("manual").open = true; }
   else if (!S.geminiKey) m.preloadGis();
 }).catch(() => { $("manual").open = true; });
-const easyStatus = (msg, cls = "") => { $("easyStatus").textContent = msg; $("easyStatus").className = cls; };
+const easyStatus = (msg, cls = "") => { for (const id of ["easyStatus", "movedStatus"]) { $(id).textContent = msg; $(id).className = cls; } };
 $("agree").onchange = () => { $("easyBtn").disabled = !$("agree").checked || !setupMod?.CLIENT_ID; };
 $("easyBtn").onclick = async () => {
   $("easyBtn").disabled = true;
@@ -681,6 +690,7 @@ $("easyBtn").onclick = async () => {
     // Google Cloud を初めて使う人：規約に一度同意すれば、そのまま自動で設定できる
     if (e?.code === "tos") { $("tosHelp").hidden = false; $("tosHelp").scrollIntoView({ block: "nearest", behavior: "smooth" }); }
     if (e?.fallback) $("manual").open = true;
+    if (e?.fallback || e?.code === "tos") $("settings").classList.remove("first");   // 帯だけでは進めないので、続きの手順を見せる
   } finally {
     $("easyBtn").disabled = !$("agree").checked;
   }
@@ -691,8 +701,8 @@ $("movedBtn").onclick = () => {
   if (!setupMod?.CLIENT_ID) return;
   $("agree").checked = true; $("easyBtn").disabled = false;
   $("easyBtn").click();
-  $("easyStatus").scrollIntoView({ block: "center", behavior: "smooth" });
 };
+$("moreBtn").onclick = () => $("settings").classList.remove("first");
 $("pasteBtn").onclick = async () => {
   let text = "";
   try { text = (await navigator.clipboard.readText()).trim(); } catch {}
@@ -706,6 +716,8 @@ $("pasteBtn").onclick = async () => {
 function applyKey(key) {
   S.geminiKey = key; S.provider = "gemini"; save();
   $("movedNote").hidden = true;
+  // 帯から設定した人は、そのまま通訳の画面へ
+  if ($("settings").classList.contains("first")) { $("settings").classList.remove("first"); openSheet(false); setStatus(L("設定できました。「開始」を押すと通訳が始まります", "All set. Press \"Start\" to begin")); }
   ui.geminiKey.value = key; ui.provider.value = "gemini"; applyUi();
   easyStatus(L("✓ 設定が完了しました。「完了」を押して、下の「開始」から使えます", "✓ Setup complete. Tap \"Done\", then press \"Start\" below"), "ok");
 }
